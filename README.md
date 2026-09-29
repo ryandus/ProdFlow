@@ -5,6 +5,10 @@
 
 **Defensible eDiscovery production tooling:** load file QC, TAR validation statistics, and matter estimates, with a tamper-evident audit trail.
 
+### ▶ [Try it in your browser](https://ryandus.github.io/ProdFlow/): no install, and files never leave your device
+
+One click runs QC on a sample production with nine planted defects. You can also drop in your own production folder. The page's security policy blocks all network requests.
+
 ProdFlow covers three questions that come up on almost every matter:
 
 | Question | Command | Output |
@@ -13,7 +17,15 @@ ProdFlow covers three questions that come up on almost every matter:
 | *Can we defend the review's recall?* | `prodflow elusion` | Exact confidence intervals + methodology memo |
 | *What will this matter cost and how long will review take?* | `prodflow estimate` | Low/high volume, hours and cost with every assumption visible |
 
-It is pure Python standard library. There's nothing to install beyond Python, and nothing the output depends on changes between machines.
+It comes in two forms built from one specification:
+
+| | Browser | Command line |
+|---|---|---|
+| Install | None: [open the page](https://ryandus.github.io/ProdFlow/) | Python 3.9+, no other dependencies |
+| Best for | Demos, spot checks, sharing results with attorneys | Full-size productions, scripting, chain-of-custody logging |
+| Output | Same QC report, byte for byte | Same QC report, byte for byte |
+
+CI runs both engines against the same fixtures (clean, defective and adversarial fixtures that trigger all 34 finding types) and fails if a single byte differs.
 
 ---
 
@@ -136,6 +148,7 @@ prodflow verify-log ./qc_PROD001/audit.jsonl
 ## Repository layout
 
 ```
+docs/              browser version (GitHub Pages): engine.js is a line-for-line port of the Python checks
 prodflow/          CLI and library (stdlib only)
   qc.py            production QC checks and report rendering
   loadfile.py      DAT / OPT / LFP parsing and conversion
@@ -144,7 +157,7 @@ prodflow/          CLI and library (stdlib only)
   integrity.py     SHA-256, read-only guards, hash-chained audit log
 samples/           generator for clean and defective synthetic productions
 examples/          reports generated from the samples
-tests/             unittest suite (runs on Linux and Windows in CI)
+tests/             unittest suite, incl. browser-vs-CLI parity (runs on Linux and Windows in CI)
 ```
 
 Rebuild the samples at any time with `python samples/generate.py`. Output is byte-identical on every run.
@@ -155,10 +168,13 @@ Rebuild the samples at any time with `python samples/generate.py`. Output is byt
 python -m unittest discover -s tests -v
 ```
 
-The suite covers: every planted defect is detected with the expected counts, a clean production passes with zero findings, the source tree hashes identically after a run, hostile paths (`..\..\`, `C:\`) are rejected, audit-log tampering is detected, and the statistics match reference values.
+The suite covers: every planted defect is detected with the expected counts, a clean production passes with zero findings, the source tree hashes identically after a run, hostile paths (`..\..\`, `C:\`) are rejected, audit-log tampering is detected, and the statistics match reference values. The parity tests run the browser engine under Node.js and require byte-identical samples and reports, matching statistics and memos, and audit entries from the browser that verify with `prodflow verify-log`.
+
+To run the browser version offline, for example on an air-gapped lab machine: `python -m http.server -d docs`, then open `http://localhost:8000`.
 
 ## Scope and limitations
 
+- The browser version reads load files and any natives it hashes into memory. For productions with multi-gigabyte load files, use the command line.
 - Image files are checked for existence, not decoded. Blank or corrupt TIFFs aren't detected yet.
 - Only SHA-256 hash fields are verified. MD5/SHA-1 fields are carried through but not checked.
 - LFP image-type codes (`2` TIFF, `4` JPEG, `7` PDF) follow common usage. Confirm them against your review platform's import spec.
