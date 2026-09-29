@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prodflow"
+version = "0.1.0"
+description = "eDiscovery production QC, TAR validation statistics, and matter estimates with a tamper-evident audit trail."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Ryan Hanks"}]
+dependencies = []
+
+[project.scripts]
+prodflow = "prodflow.cli:main"
+
+[tool.setuptools]
+packages = ["prodflow"]
