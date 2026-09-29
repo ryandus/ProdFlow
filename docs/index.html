@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>ProdFlow — eDiscovery Production QC</title>
+<meta name="description" content="Validate eDiscovery productions, defend TAR recall, and estimate matter cost. Runs entirely in your browser; files never leave your device.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cpath d='M8 9h10a5 5 0 010 10h-6v5H8z' fill='none' stroke='%2322d3ee' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-inner">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">P</span>
+      <div>
+        <div class="brand-name">ProdFlow</div>
+        <div class="brand-sub">Defensible eDiscovery production tooling</div>
+      </div>
+    </div>
+    <a class="gh" href="https://github.com/ryandus/ProdFlow" rel="noopener">View source on GitHub</a>
+  </div>
+  <nav class="wrap tabs" role="tablist" aria-label="Tools">
+    <button role="tab" id="tab-qc" aria-controls="panel-qc" aria-selected="true">Production QC</button>
+    <button role="tab" id="tab-tar" aria-controls="panel-tar" aria-selected="false">TAR Validation</button>
+    <button role="tab" id="tab-est" aria-controls="panel-est" aria-selected="false">Matter Estimate</button>
+    <button role="tab" id="tab-about" aria-controls="panel-about" aria-selected="false">How it works</button>
+  </nav>
+</header>
+
+<div class="privacy wrap"><span class="dot" aria-hidden="true"></span>Runs entirely in your browser. Files are read locally and never uploaded; this page is blocked from making network requests.</div>
+
+<main class="wrap">
+<!-- ============================================================ QC -->
+<section id="panel-qc" role="tabpanel" aria-labelledby="tab-qc">
+  <div class="lede">
+    <h1>Is this production ready to serve?</h1>
+    <p>A production is a set of load files (DAT for metadata, OPT or LFP for images) plus the images, natives and text they point to.
+      ProdFlow cross-checks all of it: Bates numbering, page counts, attachment families, file paths, dates and SHA-256 hashes.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Try it with sample data</h2>
+      <p class="muted">Two synthetic productions, generated in your browser. The defective one has nine planted problems.</p>
+      <div class="btns">
+        <button class="btn primary" id="run-defective">Run defective sample</button>
+        <button class="btn" id="run-clean">Run clean sample</button>
+      </div>
+      <details class="defects">
+        <summary>What was planted?</summary>
+        <ol id="defect-list"></ol>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Check your own production</h2>
+      <div id="drop" class="drop" tabindex="0">
+        <p><strong>Drop the production folder here</strong></p>
+        <p class="muted">or</p>
+        <label class="btn" for="folder">Choose folder…</label>
+        <input id="folder" type="file" webkitdirectory multiple hidden>
+      </div>
+      <div id="own-setup" class="setup" hidden>
+        <p id="own-summary" class="muted"></p>
+        <div class="fields">
+          <label>DAT file<select id="sel-dat"></select></label>
+          <label>Image load file<select id="sel-img"></select></label>
+          <label>Operator (for the audit log)<input id="operator" type="text" placeholder="Your name" autocomplete="name"></label>
+        </div>
+        <details>
+          <summary>Field mapping (optional)</summary>
+          <p class="muted small">Common names such as BegBates, BEGDOC, ProdBeg, BegAttach and NativeLink are recognized automatically.
+            Map anything else as <code>role=Field Name</code>, one per line. Roles: beg, end, begattach, endattach, native, text, sha256, pagecount.</p>
+          <textarea id="overrides" rows="3" placeholder="beg=Production Begin&#10;end=Production End"></textarea>
+        </details>
+        <button class="btn primary" id="run-own">Run QC</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="qc-status" class="status" role="status" aria-live="polite"></div>
+  <div id="qc-results" hidden>
+    <div id="verdict" class="verdict"></div>
+    <div id="tiles" class="tiles"></div>
+    <div class="card">
+      <div class="row-between">
+        <h2>Findings</h2>
+        <div class="filters">
+          <select id="f-sev" aria-label="Severity filter">
+            <option value="">All severities</option><option value="error">Errors</option><option value="warning">Warnings</option>
+          </select>
+          <input id="f-search" type="search" placeholder="Search Bates, code, detail" aria-label="Search findings">
+        </div>
+      </div>
+      <div id="chips" class="chips"></div>
+      <p id="code-help" class="code-help"></p>
+      <div class="table-wrap"><table id="findings"><thead><tr><th>Severity</th><th>Code</th><th>Bates / key</th><th>Source</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+      <p id="no-findings" class="muted" hidden>No findings. Every check passed.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>Load file integrity</h2>
+        <p class="muted small">Hashed before and after the run. Any change would abort the run.</p>
+        <div class="table-wrap"><table id="hashes"><thead><tr><th>File</th><th>Encoding</th><th>SHA-256</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h2>Download</h2>
+        <p class="muted small">Byte-identical to the command-line tool's output for the same inputs. The audit log verifies with <code>prodflow verify-log</code>.</p>
+        <div class="btns col">
+          <button class="btn" id="dl-md">QC report (.md)</button>
+          <button class="btn" id="dl-json">QC report (.json)</button>
+          <button class="btn" id="dl-audit">Audit log entry (.jsonl)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ TAR -->
+<section id="panel-tar" role="tabpanel" aria-labelledby="tab-tar" hidden>
+  <div class="lede">
+    <h1>How much did the review miss?</h1>
+    <p>After a technology-assisted review, draw a random sample from the documents you are <em>not</em> producing (the null set) and review it.
+      The share of responsive documents in that sample, the elusion rate, gives a defensible estimate of recall with an exact confidence interval.</p>
+  </div>
+  <div class="grid2">
+    <form class="card" id="tar-form" autocomplete="off">
+      <h2>Inputs</h2>
+      <div class="fields">
+        <label>Null set size<span class="hint">Documents not produced</span><input id="t-null" type="number" min="1" step="1" value="250000"></label>
+        <label>Sample size<span class="hint">Randomly drawn from the null set</span><input id="t-sample" type="number" min="1" step="1" value="1500"></label>
+        <label>Responsive found in sample<input id="t-found" type="number" min="0" step="1" value="6"></label>
+        <label>Responsive identified by review<input id="t-resp" type="number" min="0" step="1" value="42000"></label>
+        <label>Confidence level<select id="t-conf"><option value="0.9">90%</option><option value="0.95" selected>95%</option><option value="0.99">99%</option></select></label>
+        <label>Matter name<input id="t-matter" type="text" value="Synthetic v. Example"></label>
+      </div>
+      <p id="tar-error" class="error-text" role="alert"></p>
+    </form>
+    <div class="card">
+      <h2>Result</h2>
+      <div class="big-stat"><span id="t-recall" class="big"></span><span class="big-label">estimated recall</span></div>
+      <p id="t-recall-ci" class="muted"></p>
+      <svg id="t-bar" class="ci-bar" viewBox="0 0 400 64" role="img" aria-label="Recall confidence interval"></svg>
+      <dl class="kv">
+        <dt>Estimated responsive documents missed</dt><dd id="t-missed"></dd>
+        <dt>Elusion rate</dt><dd id="t-elusion"></dd>
+        <dt>Achieved margin of error</dt><dd id="t-margin"></dd>
+      </dl>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="row-between"><h2>Methodology memo</h2><button class="btn" id="dl-memo">Download (.md)</button></div>
+      <div id="memo" class="md"></div>
+    </div>
+    <form class="card" id="ss-form" autocomplete="off">
+      <h2>Plan the sample</h2>
+      <p class="muted small">How many documents to sample for a target margin of error.</p>
+      <div class="fields">
+        <label>Confidence<select id="s-conf"><option value="0.9">90%</option><option value="0.95" selected>95%</option><option value="0.99">99%</option></select></label>
+        <label>Margin of error (%)<input id="s-margin" type="number" min="0.1" max="50" step="0.1" value="2"></label>
+        <label>Population (optional)<input id="s-pop" type="number" min="1" step="1" value="250000"></label>
+      </div>
+      <div class="big-stat"><span id="s-n" class="big"></span><span class="big-label">documents to sample</span></div>
+    </form>
+  </div>
+</section>
+
+<!-- ============================================================ Estimate -->
+<section id="panel-est" role="tabpanel" aria-labelledby="tab-est" hidden>
+  <div class="lede">
+    <h1>What will this matter cost?</h1>
+    <p>Volume, review hours and cost as a low/high range. Every assumption is visible and editable. These are planning figures, not vendor quotes.</p>
+  </div>
+  <div class="grid2">
+    <form class="card" id="est-form" autocomplete="off">
+      <h2>Inputs</h2>
+      <div class="fields">
+        <label>Collected data (GB)<input id="e-gb" type="number" min="0.1" step="0.1" value="120"></label>
+        <label>Hosting months<input id="e-months" type="number" min="0" step="1" value="6"></label>
+      </div>
+      <div class="row-between"><h3>Assumptions</h3><button type="button" class="btn small" id="e-reset">Reset</button></div>
+      <div class="table-wrap"><table id="assumptions"><thead><tr><th>Assumption</th><th>Low</th><th>High</th></tr></thead><tbody></tbody></table></div>
+      <p id="est-error" class="error-text" role="alert"></p>
+    </form>
+    <div class="card">
+      <div class="row-between"><h2>Estimate</h2><button class="btn" id="dl-est">Download (.md)</button></div>
+      <div class="table-wrap"><table id="est-table"><thead><tr><th>Measure</th><th class="num">Low</th><th class="num">High</th></tr></thead><tbody></tbody></table></div>
+      <p class="muted small">Low and High combine every assumption's favorable or unfavorable end, so the spread is a bounding range, not a confidence interval.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ About -->
+<section id="panel-about" role="tabpanel" aria-labelledby="tab-about" hidden>
+  <div class="lede">
+    <h1>Built to hold up</h1>
+    <p>ProdFlow is a command-line tool and this browser version of it. Both share one specification and are tested against each other: for the same inputs they produce byte-identical reports.</p>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h2>Defensibility guarantees</h2>
+      <ul class="checks">
+        <li><strong>Source is read-only.</strong> Files are only read. In the browser that is enforced by the platform; the command-line tool also refuses to write inside the production.</li>
+        <li><strong>Integrity checked before and after.</strong> Load files are SHA-256 hashed before and after every run; any change aborts it.</li>
+        <li><strong>Tamper-evident audit log.</strong> Each entry records who ran what, when, and every input and output hash, and commits to the previous entry's hash.</li>
+        <li><strong>Reproducible.</strong> Reports carry no timestamps and are sorted deterministically. Same input, same bytes.</li>
+        <li><strong>No silent failures.</strong> Malformed rows, bad encodings and unresolvable paths become findings, never skipped rows.</li>
+        <li><strong>Private.</strong> This page's security policy blocks all network requests, so nothing you load can leave your device.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Command-line version</h2>
+      <p class="muted small">For full-size productions, scripting and chain-of-custody logging. Python 3.9+ only, no other dependencies.</p>
+      <pre class="code">git clone https://github.com/ryandus/ProdFlow.git
+cd ProdFlow
+python -m prodflow qc "D:\Productions\PROD001" --out qc_PROD001 --operator "Your Name"
+python -m prodflow verify-log qc_PROD001\audit.jsonl</pre>
+      <p class="muted small">Offline or air-gapped: serve this page locally with <code>python -m http.server -d docs</code> and open <code>http://localhost:8000</code>.</p>
+      <h3>Checks performed</h3>
+      <div id="code-dictionary" class="dict"></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="wrap foot">
+  <span>ProdFlow · MIT License · Built by <a href="https://github.com/ryandus" rel="noopener">Ryan C. Hanks</a></span>
+  <span class="muted">All sample data is synthetic.</span>
+</footer>
+<script type="module" src="app.js"></script>
+</body>
+</html>
