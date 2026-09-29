@@ -2,11 +2,11 @@
 import re
 from datetime import datetime
 from functools import lru_cache
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 from . import __version__
 from .integrity import sha256_file
-from .loadfile import parse_dat, parse_lfp, parse_opt, read_text, split_bates
+from .loadfile import parse_dat, parse_lfp, parse_opt, read_text, split_bates, split_win_path
 
 ROLE_ALIASES = {
     "beg": {"begbates", "begdoc", "begno", "beginbates", "prodbeg", "prodbegbates", "batesbegin", "startbates"},
@@ -34,19 +34,19 @@ class _Findings(list):
 
 def _resolve(root, raw):
     """Map a load-file path to a file under root. Returns (path_or_None, problem_code_or_None)."""
-    win = PureWindowsPath(raw.strip())
-    if win.drive or raw.strip().startswith("\\\\"):
+    absolute, parts = split_win_path(raw)
+    if absolute:
         return None, "ABSOLUTE_PATH"
-    parts = [p for p in win.parts if p not in ("\\", "/", ".")]
     if ".." in parts:
         return None, "PATH_OUTSIDE_ROOT"
     # Compare against real directory entries so case differences are caught the same way
     # on case-insensitive (Windows/macOS) and case-sensitive (Linux) filesystems.
     cur, mismatch = root, False
     for part in parts:
-        actual = _listing(cur).get(part.lower())
-        if actual is None:
+        names = _listing(cur).get(part.lower())
+        if not names:
             return None, "FILE_MISSING"
+        actual = part if part in names else names[0]
         mismatch |= actual != part
         cur = cur / actual
     if not cur.is_file():
@@ -56,7 +56,10 @@ def _resolve(root, raw):
 
 @lru_cache(maxsize=None)
 def _listing(directory):
-    return {c.name.lower(): c.name for c in directory.iterdir()} if directory.is_dir() else {}
+    names = {}
+    for c in sorted(directory.iterdir()) if directory.is_dir() else []:
+        names.setdefault(c.name.lower(), []).append(c.name)
+    return names
 
 
 def _check_file(root, raw, kind, f, source, line, bates):
@@ -256,6 +259,9 @@ def discover(root, suffix):
 def run_qc(root, dat=None, image_file=None, overrides=None):
     """Returns a deterministic report dict. Never writes to root."""
     root = Path(root).resolve()
+    for p in (dat, image_file):
+        if p and root not in Path(p).resolve().parents:
+            raise ValueError(f"Load file {p} is not inside the production folder {root}")
     _listing.cache_clear()
     f = _Findings()
     load_files, docs, pages, n_images = [], [], None, 0

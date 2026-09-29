@@ -1,7 +1,7 @@
 """Parsers and writers for Concordance DAT, Opticon OPT, and IPRO LFP load files."""
 import codecs
 import re
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 DAT_DELIM = "\x14"   # Concordance default field separator (ASCII 20, shown as ¶)
 DAT_QUOTE = "\xfe"   # Concordance default text qualifier (þ)
@@ -19,15 +19,19 @@ def read_text(path):
     raw = Path(path).read_bytes()
     for bom, enc in ((codecs.BOM_UTF8, "utf-8-sig"), (codecs.BOM_UTF16_LE, "utf-16"), (codecs.BOM_UTF16_BE, "utf-16")):
         if raw.startswith(bom):
-            return raw.decode(enc), enc, None
+            try:
+                return raw.decode(enc), enc, None
+            except UnicodeDecodeError as e:
+                raise LoadFileError(f"{path}: invalid {enc} data at byte offset {e.start}") from e
     try:
         return raw.decode("utf-8"), "utf-8", None
     except UnicodeDecodeError as e:
-        utf8_error = e
+        bad = e.start
     try:
-        return raw.decode("cp1252"), "cp1252", f"Not valid UTF-8 ({utf8_error}); decoded as Windows-1252"
+        text = raw.decode("cp1252")
     except UnicodeDecodeError as e:
-        raise LoadFileError(f"{path}: not decodable as UTF-8 or Windows-1252: {e}") from e
+        raise LoadFileError(f"{path}: not decodable as UTF-8 or Windows-1252 (byte offset {e.start})") from e
+    return text, "cp1252", f"Not valid UTF-8 (byte 0x{raw[bad]:02X} at offset {bad}); decoded as Windows-1252"
 
 
 def parse_dat(text, delim=DAT_DELIM, quote=DAT_QUOTE):
@@ -92,7 +96,7 @@ def parse_lfp(text):
             loc = parts[4][1:].split(";")
             rec.update(key=parts[1].strip(), docbreak=parts[2].strip().upper() == "D", volume=loc[0])
             if len(loc) >= 3:
-                rec["path"] = str(PureWindowsPath(loc[1], loc[2]))
+                rec["path"] = join_win_path(loc[1], loc[2])
         out.append(rec)
     return out, other
 
@@ -100,9 +104,11 @@ def parse_lfp(text):
 def opt_to_lfp(records):
     lines = []
     for r in records:
-        p = PureWindowsPath(r["path"])
-        lines.append(f"IM,{r['key']},{'D' if r['docbreak'] else ' '},0,@{r['volume']};{p.parent};{p.name};"
-                     f"{LFP_IMAGE_TYPES.get(p.suffix.lower(), '2')}")
+        cut = max(r["path"].rfind("\\"), r["path"].rfind("/"))
+        parent, name = r["path"][:max(cut, 0)], r["path"][cut + 1:]
+        suffix = "." + name.rsplit(".", 1)[1].lower() if "." in name else ""
+        lines.append(f"IM,{r['key']},{'D' if r['docbreak'] else ' '},0,@{r['volume']};{parent};{name};"
+                     f"{LFP_IMAGE_TYPES.get(suffix, '2')}")
     return "\r\n".join(lines) + "\r\n"
 
 
@@ -127,3 +133,14 @@ def split_bates(value):
     """'ABC000123' -> ('ABC', 123, 6). Returns None if there is no trailing number."""
     m = BATES_RE.fullmatch(value.strip())
     return (m.group(1), int(m.group(2)), len(m.group(2))) if m else None
+
+
+def split_win_path(raw):
+    """Load-file paths are Windows-style. Returns (is_absolute, parts) using one explicit rule on every OS."""
+    s = raw.strip()
+    absolute = bool(re.match(r"[A-Za-z]:", s)) or s.startswith(("\\\\", "//"))
+    return absolute, [p for p in re.split(r"[\\/]", s) if p not in ("", ".")]
+
+
+def join_win_path(directory, name):
+    return directory.rstrip("\\/") + "\\" + name if directory else name

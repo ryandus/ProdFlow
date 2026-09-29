@@ -24,8 +24,9 @@ def cmd_qc(a):
         raise SystemExit(f"Production folder not found: {root}")
     out = Path(a.out).resolve()
     ensure_outside(out, root)
-    dat = Path(a.dat) if a.dat else discover(root, ".dat")
-    img = Path(a.opt or a.lfp) if (a.opt or a.lfp) else (discover(root, ".opt") or discover(root, ".lfp"))
+    # --dat/--opt/--lfp are relative to the production root (absolute paths also accepted)
+    dat = root / a.dat if a.dat else discover(root, ".dat")
+    img = root / (a.opt or a.lfp) if (a.opt or a.lfp) else (discover(root, ".opt") or discover(root, ".lfp"))
     if not dat and not img:
         raise SystemExit("No .dat, .opt or .lfp found; specify --dat / --opt / --lfp")
     overrides = dict(kv.split("=", 1) for kv in a.field)
