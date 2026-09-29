@@ -91,7 +91,7 @@ summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 0.
 /* results */
 .status { min-height: 1.5em; margin: 6px 0 10px; color: var(--muted); }
 .status.error { color: var(--red); }
-.verdict { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 18px; border-radius: var(--radius); margin-bottom: 14px;
+.verdict { scroll-margin-top: 140px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 18px; border-radius: var(--radius); margin-bottom: 14px;
   border: 1px solid var(--border); background: var(--surface); }
 .verdict .badge { font-weight: 800; font-size: 1.1rem; padding: 4px 12px; border-radius: 8px; letter-spacing: 0.04em; }
 .verdict.pass .badge { background: rgba(52, 211, 153, 0.15); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.4); }
