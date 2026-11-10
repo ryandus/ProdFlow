@@ -147,6 +147,43 @@ prodflow verify-log ./qc_PROD001/audit.jsonl
 
 ---
 
+## Report viewer (Streamlit, local only)
+
+A read-only desktop viewer for a finished `prodflow qc` output folder: `qc_report.json` and, if present, the `audit.jsonl` next to it. It does not run QC and never opens the production itself, so both QC engines are untouched.
+
+Requires **Python 3.11+**, the minimum for the pinned Streamlit (the CLI itself still runs on 3.9+). The viewer imports `prodflow`, so the package must be installed as well as Streamlit:
+
+```bash
+pip install -e .                       # makes prodflow importable; the CLI keeps zero dependencies
+pip install -r gui/requirements.txt    # Streamlit, pinned
+python gui/make_demo.py                # builds the synthetic demo reports in gui/demo/
+streamlit run gui/app.py               # run from the repo root; serves on http://localhost:8501 only
+```
+
+![Defective sample: integrity block, summary, findings by type and finding detail](gui/screenshots/defective.png)
+
+**What it checks on every load**
+
+- Opens the report `rb` only and never writes to it. SHA-256 is taken of the bytes it parses and again of the file afterwards, and both are shown.
+- Recounts errors, warnings, findings by type and PASS/FAIL from the findings themselves. A report whose summary disagrees is rejected.
+- If `audit.jsonl` is present: verifies its hash chain, then requires its latest record of `qc_report.json` to match the file's SHA-256 and its input hashes to match the report's load files. Without one, the screen says the report was not cross-checked.
+- Optionally compares the report's SHA-256 against one you supply from an independent record. A mismatch is a hard stop.
+- Any failure (unreadable file, bad JSON, missing field, mismatch) rejects the whole report. Nothing is partially displayed.
+
+![A report edited after the run is rejected](gui/screenshots/tampered.png)
+
+**What it does not prove.** A passing check means the folder is internally consistent, not that it is authentic: someone who rewrites both the report and its audit log can make them agree. Authenticity comes from comparing against a hash held elsewhere, which is what the expected SHA-256 field is for.
+
+**Audit log.** Every load, pass or fail, is appended to `gui/audit/audit.jsonl` (git-ignored) with UTC timestamp, tool version, self-reported operator, input, SHA-256 before and after, and outcome. It uses the same hash chain as the CLI, so `prodflow verify-log gui/audit/audit.jsonl` checks it. It is append-only by this app, not tamper-proof. Paths are stored repo-relative; a folder outside the repo is recorded by name and SHA-256 only. The CLI's own audit entries hold absolute paths, the hostname and the OS user: the viewer shows only their timestamps, tool version, file names and hashes.
+
+**Local only.** `.streamlit/config.toml` binds to `localhost` and disables usage statistics. Report text is always rendered as literal text, so markdown or image links inside a report are never rendered or fetched.
+
+![Clean sample](gui/screenshots/clean.png)
+
+The demo reports in `gui/demo/` are synthetic, built deterministically by `python gui/make_demo.py` from the sample productions, and include one tampered report that must be rejected. All screenshots show that synthetic data.
+
+---
+
 ## Repository layout
 
 ```
@@ -157,6 +194,7 @@ prodflow/          CLI and library (stdlib only)
   tar.py           Clopper-Pearson, elusion, recall, sample size, memo
   estimate.py      volume and cost model
   integrity.py     SHA-256, read-only guards, hash-chained audit log
+gui/               read-only Streamlit viewer for QC output (optional; needs Streamlit)
 samples/           generator for clean and defective synthetic productions
 examples/          reports generated from the samples
 tests/             unittest suite, incl. browser-vs-CLI parity (runs on Linux and Windows in CI)
